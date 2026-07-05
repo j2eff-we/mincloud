@@ -5,6 +5,7 @@ import (
 	"flag"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -16,15 +17,19 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", ":9900", "listen address")
+	addr := flag.String("addr", cmp.Or(os.Getenv("MINCLOUD_ADDR"), ":9900"), "listen address (env: MINCLOUD_ADDR)")
 	verbose := flag.Bool("v", false, "log full request dumps")
 	flag.Parse()
 
 	store := credstore.New()
 	accessKeyID := loadDevCredential(store)
 
-	log.Printf("mincloud listening on %s (access key %s)", *addr, accessKeyID)
-	log.Fatal(http.ListenAndServe(*addr, handler(store, *verbose)))
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("mincloud listening on %s (access key %s)", ln.Addr(), accessKeyID)
+	log.Fatal(http.Serve(ln, handler(store, *verbose)))
 }
 
 // loadDevCredential registers the single development credential, configurable
