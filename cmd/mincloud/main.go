@@ -3,38 +3,47 @@ package main
 import (
 	"cmp"
 	"flag"
-	"io"
 	"log"
 	"net"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 
 	"github.com/j2eff-we/mincloud/internal/credstore"
-	"github.com/j2eff-we/mincloud/internal/sigv4"
-	"github.com/j2eff-we/mincloud/internal/sts"
+	"github.com/j2eff-we/mincloud/internal/service/iam"
+	"github.com/j2eff-we/mincloud/internal/service/sts"
 )
 
 func main() {
-	addr := flag.String("addr", cmp.Or(os.Getenv("MINCLOUD_ADDR"), ":9900"), "listen address (env: MINCLOUD_ADDR)")
+	stsAddr := flag.String("addr", cmp.Or(os.Getenv("MINCLOUD_STS_ADDR"), os.Getenv("MINCLOUD_ADDR"), ":9900"),
+		"STS listen address (env: MINCLOUD_STS_ADDR, legacy: MINCLOUD_ADDR)")
+	iamAddr := flag.String("iam-addr", cmp.Or(os.Getenv("MINCLOUD_IAM_ADDR"), ":9910"),
+		"IAM listen address (env: MINCLOUD_IAM_ADDR)")
 	verbose := flag.Bool("v", false, "log full request dumps")
 	flag.Parse()
 
 	store := credstore.New()
 	accessKeyID := loadDevCredential(store)
 
-	ln, err := net.Listen("tcp", *addr)
+	stsLn, err := net.Listen("tcp", *stsAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("mincloud listening on %s (access key %s)", ln.Addr(), accessKeyID)
-	log.Fatal(http.Serve(ln, handler(store, *verbose)))
+	iamLn, err := net.Listen("tcp", *iamAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("mincloud sts listening on %s, iam listening on %s (access key %s)",
+		stsLn.Addr(), iamLn.Addr(), accessKeyID)
+
+	errc := make(chan error, 2)
+	go func() { errc <- http.Serve(stsLn, sts.Handler(store, *verbose)) }()
+	go func() { errc <- http.Serve(iamLn, iam.Handler(store, *verbose)) }()
+	log.Fatal(<-errc)
 }
 
 // loadDevCredential registers the single development credential, configurable
 // via environment variables. Defaults are well-known fake values for local use.
-func loadDevCredential(store *credstore.Store) string {
+func loadDevCredential(store credstore.Store) string {
 	accessKeyID := cmp.Or(os.Getenv("MINCLOUD_ACCESS_KEY_ID"), "MINCLOUDTESTKEY0000A")
 	account := cmp.Or(os.Getenv("MINCLOUD_ACCOUNT_ID"), "123456789012")
 	user := cmp.Or(os.Getenv("MINCLOUD_USER"), "jeff")
@@ -47,59 +56,4 @@ func loadDevCredential(store *credstore.Store) string {
 		},
 	})
 	return accessKeyID
-}
-
-func handler(store *credstore.Store, verbose bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if verbose {
-			if dump, err := httputil.DumpRequest(r, true); err == nil {
-				log.Printf("request:\n%s", dump)
-			}
-		}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			sts.WriteError(w, http.StatusBadRequest, "InvalidRequest", "unable to read request body")
-			return
-		}
-
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			sts.WriteError(w, http.StatusForbidden, "MissingAuthenticationToken", "Request is missing Authentication Token")
-			return
-		}
-		auth, err := sigv4.ParseAuthorization(authHeader)
-		if err != nil {
-			sts.WriteError(w, http.StatusForbidden, "IncompleteSignature", err.Error())
-			return
-		}
-		cred, ok := store.Lookup(auth.AccessKeyID)
-		if !ok {
-			sts.WriteError(w, http.StatusForbidden, "InvalidClientTokenId", "The security token included in the request is invalid.")
-			return
-		}
-		if err := sigv4.Verify(r, auth, body, cred.SecretAccessKey); err != nil {
-			sts.WriteError(w, http.StatusForbidden, "SignatureDoesNotMatch",
-				"The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method.")
-			return
-		}
-
-		form, err := url.ParseQuery(string(body))
-		if err != nil {
-			sts.WriteError(w, http.StatusBadRequest, "InvalidRequest", "unable to parse request body")
-			return
-		}
-		action := form.Get("Action")
-		log.Printf("%s %s by %s", auth.Service, action, cred.Identity.ARN)
-
-		switch action {
-		case "GetCallerIdentity":
-			sts.WriteGetCallerIdentity(w, sts.CallerIdentity{
-				Account: cred.Identity.Account,
-				UserID:  cred.Identity.UserID,
-				ARN:     cred.Identity.ARN,
-			})
-		default:
-			sts.WriteError(w, http.StatusBadRequest, "InvalidAction", "Could not find operation "+action)
-		}
-	}
 }
