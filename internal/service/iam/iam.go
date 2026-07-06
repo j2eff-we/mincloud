@@ -4,18 +4,16 @@
 package iam
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/xml"
 	"io"
 	"log"
-	"math/big"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/j2eff-we/mincloud/internal/credgen"
 	"github.com/j2eff-we/mincloud/internal/credstore"
 	"github.com/j2eff-we/mincloud/internal/service"
 )
@@ -23,10 +21,6 @@ import (
 const (
 	xmlns       = "https://iam.amazonaws.com/doc/2010-05-08/"
 	serviceName = "iam"
-
-	accessKeyIDAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	accessKeyIDLength   = 16
-	secretKeyRawBytes   = 30 // base64-encodes to exactly 40 characters
 )
 
 type createAccessKeyResponse struct {
@@ -105,13 +99,13 @@ func createAccessKey(w http.ResponseWriter, store credstore.Store, caller credst
 		name = userName
 		identity = credstore.Identity{
 			Account: caller.Identity.Account,
-			UserID:  "AIDA" + mustRandomAlphanumeric(accessKeyIDLength),
+			UserID:  credgen.UserID("AIDA"),
 			ARN:     "arn:aws:iam::" + caller.Identity.Account + ":user/" + userName,
 		}
 	}
 
-	accessKeyID := "AKIA" + mustRandomAlphanumeric(accessKeyIDLength)
-	secretAccessKey, err := randomSecret()
+	accessKeyID := credgen.AccessKeyID(identity.Account)
+	secretAccessKey, err := credgen.SecretAccessKey()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "InternalFailure", "unable to generate credentials")
 		return
@@ -143,27 +137,6 @@ func userNameFromARN(arn string) string {
 		return arn[i+1:]
 	}
 	return arn
-}
-
-func mustRandomAlphanumeric(n int) string {
-	b := make([]byte, n)
-	max := big.NewInt(int64(len(accessKeyIDAlphabet)))
-	for i := range b {
-		idx, err := rand.Int(rand.Reader, max)
-		if err != nil {
-			panic(err) // crypto/rand failure is unrecoverable
-		}
-		b[i] = accessKeyIDAlphabet[idx.Int64()]
-	}
-	return string(b)
-}
-
-func randomSecret() (string, error) {
-	raw := make([]byte, secretKeyRawBytes)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(raw), nil
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

@@ -70,8 +70,8 @@ func TestCreateAccessKeyForSelf(t *testing.T) {
 	if ak.UserName != "jeff" {
 		t.Errorf("UserName = %q, want jeff", ak.UserName)
 	}
-	if !strings.HasPrefix(ak.AccessKeyId, "AKIA") || len(ak.AccessKeyId) != len("AKIA")+accessKeyIDLength {
-		t.Errorf("AccessKeyId = %q, want AKIA prefix + %d chars", ak.AccessKeyId, accessKeyIDLength)
+	if !strings.HasPrefix(ak.AccessKeyId, "AKIA") || len(ak.AccessKeyId) != len("AKIA")+16 {
+		t.Errorf("AccessKeyId = %q, want AKIA prefix + 16 chars", ak.AccessKeyId)
 	}
 	if len(ak.SecretAccessKey) != 40 {
 		t.Errorf("SecretAccessKey length = %d, want 40", len(ak.SecretAccessKey))
