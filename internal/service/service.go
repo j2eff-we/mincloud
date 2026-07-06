@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/j2eff-we/mincloud/internal/credstore"
 	"github.com/j2eff-we/mincloud/internal/sigv4"
@@ -59,6 +60,23 @@ func Authenticate(r *http.Request, body []byte, store credstore.Store, serviceNa
 		return credstore.Credential{}, &AuthError{
 			Status: http.StatusForbidden, Code: "SignatureDoesNotMatch",
 			Message: "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method.",
+		}
+	}
+
+	// Temporary credentials (from STS AssumeRole) carry a session token and an
+	// expiry: the request must present the matching token and be used in time.
+	if cred.SessionToken != "" {
+		if r.Header.Get("X-Amz-Security-Token") != cred.SessionToken {
+			return credstore.Credential{}, &AuthError{
+				Status: http.StatusForbidden, Code: "InvalidClientTokenId",
+				Message: "The security token included in the request is invalid.",
+			}
+		}
+		if !cred.Expires.IsZero() && time.Now().After(cred.Expires) {
+			return credstore.Credential{}, &AuthError{
+				Status: http.StatusForbidden, Code: "ExpiredToken",
+				Message: "The security token included in the request is expired.",
+			}
 		}
 	}
 	return cred, nil

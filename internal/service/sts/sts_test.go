@@ -7,7 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"net/url"
+
 	"github.com/j2eff-we/mincloud/internal/credstore"
+	"github.com/j2eff-we/mincloud/internal/rolestore"
 	"github.com/j2eff-we/mincloud/internal/sigv4"
 )
 
@@ -56,7 +59,7 @@ func TestGetCallerIdentity(t *testing.T) {
 	r := signedRequest(t, "sts", body)
 	w := httptest.NewRecorder()
 
-	Handler(store, false).ServeHTTP(w, r)
+	Handler(store, rolestore.New(), false).ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
@@ -84,7 +87,7 @@ func TestRejectsWrongServiceScope(t *testing.T) {
 	r := signedRequest(t, "iam", body)
 	w := httptest.NewRecorder()
 
-	Handler(store, false).ServeHTTP(w, r)
+	Handler(store, rolestore.New(), false).ServeHTTP(w, r)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
@@ -95,5 +98,62 @@ func TestRejectsWrongServiceScope(t *testing.T) {
 	}
 	if resp.Code != "SignatureDoesNotMatch" {
 		t.Errorf("Code = %q, want SignatureDoesNotMatch", resp.Code)
+	}
+}
+
+func assumeRoleBody(roleArn string) string {
+	return "Action=AssumeRole&RoleArn=" + url.QueryEscape(roleArn) + "&RoleSessionName=sess1&Version=2011-06-15"
+}
+
+func TestAssumeRoleAllowedByTrust(t *testing.T) {
+	store := newTestStore()
+	roles := rolestore.New()
+	roleArn := "arn:aws:iam::123456789012:role/OrgAccess"
+	roles.Put(rolestore.Role{
+		RoleName: "OrgAccess", RoleID: "AROATESTROLE00000000", Account: "123456789012", ARN: roleArn,
+		AssumeRolePolicy: `{"Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole"}]}`,
+	})
+
+	w := httptest.NewRecorder()
+	Handler(store, roles, false).ServeHTTP(w, signedRequest(t, "sts", assumeRoleBody(roleArn)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var resp assumeRoleResponse
+	if err := xml.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !strings.HasPrefix(resp.Result.Credentials.AccessKeyId, "ASIA") {
+		t.Errorf("temp AccessKeyId = %q, want ASIA prefix", resp.Result.Credentials.AccessKeyId)
+	}
+	if resp.Result.Credentials.SessionToken == "" {
+		t.Error("SessionToken is empty")
+	}
+	if want := "arn:aws:sts::123456789012:assumed-role/OrgAccess/sess1"; resp.Result.AssumedRoleUser.Arn != want {
+		t.Errorf("AssumedRole Arn = %q, want %q", resp.Result.AssumedRoleUser.Arn, want)
+	}
+}
+
+func TestAssumeRoleDeniedWhenNotTrusted(t *testing.T) {
+	store := newTestStore()
+	roles := rolestore.New()
+	roleArn := "arn:aws:iam::123456789012:role/Closed"
+	roles.Put(rolestore.Role{
+		RoleName: "Closed", RoleID: "AROATESTROLE00000001", Account: "123456789012", ARN: roleArn,
+		// Trusts a different account, so the test caller must be refused.
+		AssumeRolePolicy: `{"Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::999999999999:root"},"Action":"sts:AssumeRole"}]}`,
+	})
+
+	w := httptest.NewRecorder()
+	Handler(store, roles, false).ServeHTTP(w, signedRequest(t, "sts", assumeRoleBody(roleArn)))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %s", w.Code, w.Body.String())
+	}
+	var resp errorResponse
+	if err := xml.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if resp.Code != "AccessDenied" {
+		t.Errorf("Code = %q, want AccessDenied", resp.Code)
 	}
 }

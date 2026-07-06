@@ -1,7 +1,10 @@
 // Package credstore maps access key IDs to secrets and their identities.
 package credstore
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // Identity is who a credential authenticates as.
 type Identity struct {
@@ -11,9 +14,15 @@ type Identity struct {
 }
 
 // Credential pairs a secret access key with the identity it belongs to.
+//
+// SessionToken and Expires are set only for temporary credentials minted by
+// STS AssumeRole: such a request must present a matching security token and be
+// used before Expires. For long-lived credentials both are zero.
 type Credential struct {
 	SecretAccessKey string
 	Identity        Identity
+	SessionToken    string
+	Expires         time.Time
 }
 
 // Store maps access key IDs to credentials. Implementations must be safe for

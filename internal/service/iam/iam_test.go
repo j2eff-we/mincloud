@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/j2eff-we/mincloud/internal/credstore"
+	"github.com/j2eff-we/mincloud/internal/rolestore"
 	"github.com/j2eff-we/mincloud/internal/service/sts"
 	"github.com/j2eff-we/mincloud/internal/sigv4"
 )
@@ -57,7 +58,7 @@ func TestCreateAccessKeyForSelf(t *testing.T) {
 	r := signedRequest(t, testAccessKeyID, testSecretKey, "iam", body)
 	w := httptest.NewRecorder()
 
-	Handler(store, false).ServeHTTP(w, r)
+	Handler(store, rolestore.New(), false).ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
@@ -100,7 +101,7 @@ func TestCreateAccessKeyThenSTSAuthenticates(t *testing.T) {
 	body := "Action=CreateAccessKey&Version=2010-05-08"
 	r := signedRequest(t, testAccessKeyID, testSecretKey, "iam", body)
 	w := httptest.NewRecorder()
-	Handler(store, false).ServeHTTP(w, r)
+	Handler(store, rolestore.New(), false).ServeHTTP(w, r)
 
 	var resp createAccessKeyResponse
 	if err := xml.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -111,7 +112,7 @@ func TestCreateAccessKeyThenSTSAuthenticates(t *testing.T) {
 	stsBody := "Action=GetCallerIdentity&Version=2011-06-15"
 	stsReq := signedRequest(t, ak.AccessKeyId, ak.SecretAccessKey, "sts", stsBody)
 	stsW := httptest.NewRecorder()
-	sts.Handler(store, false).ServeHTTP(stsW, stsReq)
+	sts.Handler(store, rolestore.New(), false).ServeHTTP(stsW, stsReq)
 
 	if stsW.Code != http.StatusOK {
 		t.Fatalf("GetCallerIdentity status = %d, body = %s", stsW.Code, stsW.Body.String())
@@ -129,7 +130,7 @@ func TestRejectsWrongServiceScope(t *testing.T) {
 	r := signedRequest(t, testAccessKeyID, testSecretKey, "sts", body)
 	w := httptest.NewRecorder()
 
-	Handler(store, false).ServeHTTP(w, r)
+	Handler(store, rolestore.New(), false).ServeHTTP(w, r)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
