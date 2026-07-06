@@ -16,6 +16,16 @@ import (
 )
 
 func main() {
+	// The admin subcommand is the out-of-band bootstrap plane (account
+	// creation); everything else starts the SigV4 service plane.
+	if len(os.Args) > 1 && os.Args[1] == "admin" {
+		runAdmin(os.Args[2:])
+		return
+	}
+	runServer()
+}
+
+func runServer() {
 	stsAddr := flag.String("addr", cmp.Or(os.Getenv("MINCLOUD_STS_ADDR"), os.Getenv("MINCLOUD_ADDR"), ":9900"),
 		"STS listen address (env: MINCLOUD_STS_ADDR, legacy: MINCLOUD_ADDR)")
 	iamAddr := flag.String("iam-addr", cmp.Or(os.Getenv("MINCLOUD_IAM_ADDR"), ":9910"),
