@@ -104,7 +104,7 @@ func createAccessKey(w http.ResponseWriter, store credstore.Store, caller credst
 		}
 	}
 
-	accessKeyID := credgen.AccessKeyID()
+	accessKeyID := credgen.AccessKeyID(identity.Account)
 	secretAccessKey, err := credgen.SecretAccessKey()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "InternalFailure", "unable to generate credentials")

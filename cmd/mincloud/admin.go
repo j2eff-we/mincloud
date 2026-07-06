@@ -25,9 +25,25 @@ func runAdmin(args []string) {
 	switch fs.Arg(0) {
 	case "create-account":
 		createAccount(*endpoint)
+	case "whoami":
+		whoami(fs.Arg(1))
 	default:
-		log.Fatal("usage: mincloud admin create-account [--dynamodb-endpoint URL]")
+		log.Fatal("usage: mincloud admin (create-account [--dynamodb-endpoint URL] | whoami <accessKeyId>)")
 	}
+}
+
+// whoami recovers the account ID encoded in an access key ID, offline — no
+// store lookup, no signature. It shows that a mincloud key carries its account
+// the same way a real AWS key does.
+func whoami(accessKeyID string) {
+	if accessKeyID == "" {
+		log.Fatal("usage: mincloud admin whoami <accessKeyId>")
+	}
+	account, ok := credgen.AccountFromAccessKeyID(accessKeyID)
+	if !ok {
+		log.Fatalf("%s: not an account-encoded access key id", accessKeyID)
+	}
+	fmt.Printf("%s -> account %s\n", accessKeyID, account)
 }
 
 // createAccount mints a new account with its own root user and root access key,
@@ -44,7 +60,7 @@ func createAccount(endpoint string) {
 	}
 
 	accountID := credgen.AccountID()
-	accessKeyID := credgen.AccessKeyID()
+	accessKeyID := credgen.AccessKeyID(accountID)
 	secret, err := credgen.SecretAccessKey()
 	if err != nil {
 		log.Fatalf("generate secret: %v", err)
