@@ -8,5 +8,5 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/mincloud ./cmd/mincloud
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/mincloud /usr/local/bin/mincloud
-EXPOSE 9900 9910
+EXPOSE 9900 9910 9930
 ENTRYPOINT ["/usr/local/bin/mincloud"]

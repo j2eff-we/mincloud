@@ -12,6 +12,7 @@ import (
 
 	"github.com/j2eff-we/mincloud/internal/credstore"
 	"github.com/j2eff-we/mincloud/internal/service/iam"
+	"github.com/j2eff-we/mincloud/internal/service/mgmt"
 	"github.com/j2eff-we/mincloud/internal/service/sts"
 )
 
@@ -30,6 +31,8 @@ func runServer() {
 		"STS listen address (env: MINCLOUD_STS_ADDR, legacy: MINCLOUD_ADDR)")
 	iamAddr := flag.String("iam-addr", cmp.Or(os.Getenv("MINCLOUD_IAM_ADDR"), ":9910"),
 		"IAM listen address (env: MINCLOUD_IAM_ADDR)")
+	mgmtAddr := flag.String("mgmt-addr", cmp.Or(os.Getenv("MINCLOUD_MGMT_ADDR"), ":9930"),
+		"mincloud control service listen address (env: MINCLOUD_MGMT_ADDR)")
 	dynamoEndpoint := flag.String("dynamodb-endpoint", os.Getenv("MINCLOUD_DYNAMODB_ENDPOINT"),
 		"DynamoDB endpoint to persist credentials in; empty keeps them in memory (env: MINCLOUD_DYNAMODB_ENDPOINT)")
 	verbose := flag.Bool("v", false, "log full request dumps")
@@ -39,7 +42,7 @@ func runServer() {
 	if err != nil {
 		log.Fatalf("open credstore: %v", err)
 	}
-	accessKeyID := loadDevCredential(store)
+	accessKeyID := loadManagementRoot(store)
 
 	stsLn, err := net.Listen("tcp", *stsAddr)
 	if err != nil {
@@ -49,12 +52,17 @@ func runServer() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("mincloud sts listening on %s, iam listening on %s (access key %s)",
-		stsLn.Addr(), iamLn.Addr(), accessKeyID)
+	mgmtLn, err := net.Listen("tcp", *mgmtAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("mincloud sts on %s, iam on %s, control on %s (management access key %s)",
+		stsLn.Addr(), iamLn.Addr(), mgmtLn.Addr(), accessKeyID)
 
-	errc := make(chan error, 2)
+	errc := make(chan error, 3)
 	go func() { errc <- http.Serve(stsLn, sts.Handler(store, *verbose)) }()
 	go func() { errc <- http.Serve(iamLn, iam.Handler(store, *verbose)) }()
+	go func() { errc <- http.Serve(mgmtLn, mgmt.Handler(store, *verbose)) }()
 	log.Fatal(<-errc)
 }
 
@@ -74,18 +82,21 @@ func openStore(dynamoEndpoint string) (credstore.Store, error) {
 	return credstore.OpenDynamo(ctx, dynamoEndpoint, region, table)
 }
 
-// loadDevCredential registers the single development credential, configurable
-// via environment variables. Defaults are well-known fake values for local use.
-func loadDevCredential(store credstore.Store) string {
-	accessKeyID := cmp.Or(os.Getenv("MINCLOUD_ACCESS_KEY_ID"), "MINCLOUDTESTKEY0000A")
-	account := cmp.Or(os.Getenv("MINCLOUD_ACCOUNT_ID"), "123456789012")
-	user := cmp.Or(os.Getenv("MINCLOUD_USER"), "jeff")
+// loadManagementRoot seeds the genesis "management account" and its root
+// credential — the one account that must exist before any signed request can be
+// made, the way an AWS account's root exists the moment you sign up. Everything
+// else is created from here. In a real deployment you would generate and guard
+// these; the defaults are well-known dev values, overridable via env.
+func loadManagementRoot(store credstore.Store) string {
+	accessKeyID := cmp.Or(os.Getenv("MINCLOUD_ROOT_ACCESS_KEY_ID"), os.Getenv("MINCLOUD_ACCESS_KEY_ID"), "MINCLOUDTESTKEY0000A")
+	account := cmp.Or(os.Getenv("MINCLOUD_MANAGEMENT_ACCOUNT_ID"), "000000000001")
+	secret := cmp.Or(os.Getenv("MINCLOUD_ROOT_SECRET_ACCESS_KEY"), os.Getenv("MINCLOUD_SECRET_ACCESS_KEY"), "mincloud-test-secret-not-real")
 	store.Put(accessKeyID, credstore.Credential{
-		SecretAccessKey: cmp.Or(os.Getenv("MINCLOUD_SECRET_ACCESS_KEY"), "mincloud-test-secret-not-real"),
+		SecretAccessKey: secret,
 		Identity: credstore.Identity{
 			Account: account,
-			UserID:  "AIDA" + accessKeyID[4:],
-			ARN:     "arn:aws:iam::" + account + ":user/" + user,
+			UserID:  account, // the root user's UserId is the account id
+			ARN:     "arn:aws:iam::" + account + ":root",
 		},
 	})
 	return accessKeyID
