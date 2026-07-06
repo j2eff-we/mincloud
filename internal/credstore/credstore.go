@@ -17,7 +17,9 @@ type Credential struct {
 }
 
 // Store maps access key IDs to credentials. Implementations must be safe for
-// concurrent use by multiple services.
+// concurrent use by multiple services. The interface is deliberately small so
+// its backing can move — from an in-memory map (New) to DynamoDB (OpenDynamo)
+// — without any handler noticing.
 type Store interface {
 	Put(accessKeyID string, c Credential)
 	Lookup(accessKeyID string) (Credential, bool)
@@ -25,7 +27,7 @@ type Store interface {
 
 // memStore is an in-memory Store, safe for concurrent use since it may be
 // shared across services (e.g. IAM and STS) handling requests on separate
-// goroutines.
+// goroutines. State is lost when the process exits; use OpenDynamo to persist.
 type memStore struct {
 	mu    sync.RWMutex
 	creds map[string]Credential
