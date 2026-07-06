@@ -83,15 +83,23 @@ func (s *dynamoStore) Put(accessKeyID string, c Credential) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	item := map[string]types.AttributeValue{
+		attrAccessKeyID:   &types.AttributeValueMemberS{Value: accessKeyID},
+		"SecretAccessKey": &types.AttributeValueMemberS{Value: c.SecretAccessKey},
+		"Account":         &types.AttributeValueMemberS{Value: c.Identity.Account},
+		"UserId":          &types.AttributeValueMemberS{Value: c.Identity.UserID},
+		"Arn":             &types.AttributeValueMemberS{Value: c.Identity.ARN},
+	}
+	if c.SessionToken != "" {
+		item["SessionToken"] = &types.AttributeValueMemberS{Value: c.SessionToken}
+	}
+	if !c.Expires.IsZero() {
+		item["Expires"] = &types.AttributeValueMemberS{Value: c.Expires.UTC().Format(time.RFC3339)}
+	}
+
 	_, err := s.client.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: &s.table,
-		Item: map[string]types.AttributeValue{
-			attrAccessKeyID:   &types.AttributeValueMemberS{Value: accessKeyID},
-			"SecretAccessKey": &types.AttributeValueMemberS{Value: c.SecretAccessKey},
-			"Account":         &types.AttributeValueMemberS{Value: c.Identity.Account},
-			"UserId":          &types.AttributeValueMemberS{Value: c.Identity.UserID},
-			"Arn":             &types.AttributeValueMemberS{Value: c.Identity.ARN},
-		},
+		Item:      item,
 	})
 	if err != nil {
 		// A durable store that silently drops writes is worse than a loud one:
@@ -119,14 +127,21 @@ func (s *dynamoStore) Lookup(accessKeyID string) (Credential, bool) {
 	if out.Item == nil {
 		return Credential{}, false
 	}
-	return Credential{
+	cred := Credential{
 		SecretAccessKey: stringAttr(out.Item, "SecretAccessKey"),
 		Identity: Identity{
 			Account: stringAttr(out.Item, "Account"),
 			UserID:  stringAttr(out.Item, "UserId"),
 			ARN:     stringAttr(out.Item, "Arn"),
 		},
-	}, true
+		SessionToken: stringAttr(out.Item, "SessionToken"),
+	}
+	if exp := stringAttr(out.Item, "Expires"); exp != "" {
+		if t, err := time.Parse(time.RFC3339, exp); err == nil {
+			cred.Expires = t
+		}
+	}
+	return cred, true
 }
 
 func stringAttr(item map[string]types.AttributeValue, name string) string {

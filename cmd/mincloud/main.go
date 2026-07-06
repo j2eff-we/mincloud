@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/j2eff-we/mincloud/internal/credstore"
+	"github.com/j2eff-we/mincloud/internal/rolestore"
 	"github.com/j2eff-we/mincloud/internal/service/iam"
 	"github.com/j2eff-we/mincloud/internal/service/mgmt"
 	"github.com/j2eff-we/mincloud/internal/service/sts"
@@ -43,6 +44,7 @@ func runServer() {
 		log.Fatalf("open credstore: %v", err)
 	}
 	accessKeyID := loadManagementRoot(store)
+	roles := rolestore.New()
 
 	stsLn, err := net.Listen("tcp", *stsAddr)
 	if err != nil {
@@ -60,8 +62,8 @@ func runServer() {
 		stsLn.Addr(), iamLn.Addr(), mgmtLn.Addr(), accessKeyID)
 
 	errc := make(chan error, 3)
-	go func() { errc <- http.Serve(stsLn, sts.Handler(store, *verbose)) }()
-	go func() { errc <- http.Serve(iamLn, iam.Handler(store, *verbose)) }()
+	go func() { errc <- http.Serve(stsLn, sts.Handler(store, roles, *verbose)) }()
+	go func() { errc <- http.Serve(iamLn, iam.Handler(store, roles, *verbose)) }()
 	go func() { errc <- http.Serve(mgmtLn, mgmt.Handler(store, *verbose)) }()
 	log.Fatal(<-errc)
 }

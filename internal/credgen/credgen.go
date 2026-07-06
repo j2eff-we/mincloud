@@ -35,6 +35,21 @@ func AccessKeyID(accountID string) string {
 	return "AKIA" + encodeAccount(accountID)
 }
 
+// TempAccessKeyID returns a temporary access key ID ("ASIA…"), the prefix AWS
+// uses for STS-issued credentials. It encodes the account just like AKIA keys.
+func TempAccessKeyID(accountID string) string {
+	return "ASIA" + encodeAccount(accountID)
+}
+
+// SessionToken returns an opaque token accompanying a temporary credential.
+func SessionToken() (string, error) {
+	raw := make([]byte, 48)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(raw), nil
+}
+
 // AccountFromAccessKeyID recovers the 12-digit account ID encoded in an access
 // key ID. It returns false if the body is not the expected base32 shape (e.g.
 // the well-known seed key, which is not account-encoded).
