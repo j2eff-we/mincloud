@@ -25,6 +25,7 @@ services:
     ports:
       - "9900:9900" # STS
       - "9910:9910" # IAM
+      - "9930:9930" # mincloud control (CreateAccount)
     # DynamoDB Local may still be booting when mincloud first dials it; let the
     # process exit and be restarted until the store answers.
     restart: on-failure

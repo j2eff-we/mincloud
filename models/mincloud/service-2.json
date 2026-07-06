@@ -1,0 +1,48 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2026-01-01",
+    "endpointPrefix": "mincloud",
+    "protocol": "query",
+    "serviceAbbreviation": "mincloud",
+    "serviceFullName": "mincloud Control Service",
+    "serviceId": "mincloud",
+    "signatureVersion": "v4",
+    "signingName": "mincloud",
+    "uid": "mincloud-2026-01-01",
+    "xmlNamespace": "https://mincloud.local/doc/2026-01-01/"
+  },
+  "operations": {
+    "CreateAccount": {
+      "name": "CreateAccount",
+      "http": { "method": "POST", "requestUri": "/" },
+      "input": { "shape": "CreateAccountRequest" },
+      "output": { "shape": "CreateAccountOutput", "resultWrapper": "CreateAccountResult" },
+      "documentation": "Create a new member account. Only the management account's root is authorized."
+    }
+  },
+  "shapes": {
+    "CreateAccountRequest": {
+      "type": "structure",
+      "members": {
+        "AccountName": { "shape": "AccountName" }
+      }
+    },
+    "CreateAccountOutput": {
+      "type": "structure",
+      "members": {
+        "Account": { "shape": "Account" }
+      }
+    },
+    "Account": {
+      "type": "structure",
+      "members": {
+        "AccountId": { "shape": "String" },
+        "RootAccessKeyId": { "shape": "String" },
+        "RootSecretAccessKey": { "shape": "String" }
+      }
+    },
+    "AccountName": { "type": "string" },
+    "String": { "type": "string" }
+  }
+}
