@@ -39,7 +39,7 @@ func runServer() {
 	if err != nil {
 		log.Fatalf("open credstore: %v", err)
 	}
-	accessKeyID := loadDevCredential(store)
+	accessKeyID := loadManagementRoot(store)
 
 	stsLn, err := net.Listen("tcp", *stsAddr)
 	if err != nil {
@@ -74,18 +74,21 @@ func openStore(dynamoEndpoint string) (credstore.Store, error) {
 	return credstore.OpenDynamo(ctx, dynamoEndpoint, region, table)
 }
 
-// loadDevCredential registers the single development credential, configurable
-// via environment variables. Defaults are well-known fake values for local use.
-func loadDevCredential(store credstore.Store) string {
-	accessKeyID := cmp.Or(os.Getenv("MINCLOUD_ACCESS_KEY_ID"), "MINCLOUDTESTKEY0000A")
-	account := cmp.Or(os.Getenv("MINCLOUD_ACCOUNT_ID"), "123456789012")
-	user := cmp.Or(os.Getenv("MINCLOUD_USER"), "jeff")
+// loadManagementRoot seeds the genesis "management account" and its root
+// credential — the one account that must exist before any signed request can be
+// made, the way an AWS account's root exists the moment you sign up. Everything
+// else is created from here. In a real deployment you would generate and guard
+// these; the defaults are well-known dev values, overridable via env.
+func loadManagementRoot(store credstore.Store) string {
+	accessKeyID := cmp.Or(os.Getenv("MINCLOUD_ROOT_ACCESS_KEY_ID"), os.Getenv("MINCLOUD_ACCESS_KEY_ID"), "MINCLOUDTESTKEY0000A")
+	account := cmp.Or(os.Getenv("MINCLOUD_MANAGEMENT_ACCOUNT_ID"), "000000000001")
+	secret := cmp.Or(os.Getenv("MINCLOUD_ROOT_SECRET_ACCESS_KEY"), os.Getenv("MINCLOUD_SECRET_ACCESS_KEY"), "mincloud-test-secret-not-real")
 	store.Put(accessKeyID, credstore.Credential{
-		SecretAccessKey: cmp.Or(os.Getenv("MINCLOUD_SECRET_ACCESS_KEY"), "mincloud-test-secret-not-real"),
+		SecretAccessKey: secret,
 		Identity: credstore.Identity{
 			Account: account,
-			UserID:  "AIDA" + accessKeyID[4:],
-			ARN:     "arn:aws:iam::" + account + ":user/" + user,
+			UserID:  account, // the root user's UserId is the account id
+			ARN:     "arn:aws:iam::" + account + ":root",
 		},
 	})
 	return accessKeyID
