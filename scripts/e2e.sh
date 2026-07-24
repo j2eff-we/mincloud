@@ -8,23 +8,20 @@ command -v aws >/dev/null || { echo "SKIP: aws CLI not installed"; exit 0; }
 
 go build -o mincloud ./cmd/mincloud
 
-# Ports offset from the dev defaults so e2e can run alongside a dev server.
-STS_PORT=19900 IAM_PORT=19910 EC2_PORT=19920
+# Port offset from the dev default so e2e can run alongside a dev server.
+PORT=19900
 
 export AWS_ACCESS_KEY_ID=MINCLOUDTESTKEY0000A
 export AWS_SECRET_ACCESS_KEY=mincloud-test-secret-not-real
 export AWS_DEFAULT_REGION=ap-northeast-2
-export AWS_ENDPOINT_URL_STS="http://localhost:$STS_PORT"
-export AWS_ENDPOINT_URL_IAM="http://localhost:$IAM_PORT"
-export AWS_ENDPOINT_URL_EC2="http://localhost:$EC2_PORT"
+export AWS_ENDPOINT_URL="http://localhost:$PORT"
 
-MINCLOUD_STS_ADDR=":$STS_PORT" MINCLOUD_IAM_ADDR=":$IAM_PORT" MINCLOUD_EC2_ADDR=":$EC2_PORT" \
-  ./mincloud &
+MINCLOUD_ADDR=":$PORT" ./mincloud &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null || true' EXIT
 
 for _ in $(seq 1 50); do
-  curl -s -o /dev/null "$AWS_ENDPOINT_URL_EC2" && break
+  curl -s -o /dev/null "$AWS_ENDPOINT_URL" && break
   sleep 0.1
 done
 

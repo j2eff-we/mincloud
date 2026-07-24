@@ -7,5 +7,5 @@ RUN CGO_ENABLED=0 go build -o /out/mincloud ./cmd/mincloud
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /out/mincloud /mincloud
-EXPOSE 9900 9910 9920
+EXPOSE 9900
 ENTRYPOINT ["/mincloud"]

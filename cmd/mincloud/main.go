@@ -9,44 +9,33 @@ import (
 	"os"
 
 	"github.com/j2eff-we/mincloud/internal/credstore"
+	"github.com/j2eff-we/mincloud/internal/router"
 	"github.com/j2eff-we/mincloud/internal/service/ec2"
 	"github.com/j2eff-we/mincloud/internal/service/iam"
 	"github.com/j2eff-we/mincloud/internal/service/sts"
 )
 
 func main() {
-	stsAddr := flag.String("addr", cmp.Or(os.Getenv("MINCLOUD_STS_ADDR"), os.Getenv("MINCLOUD_ADDR"), ":9900"),
-		"STS listen address (env: MINCLOUD_STS_ADDR, legacy: MINCLOUD_ADDR)")
-	iamAddr := flag.String("iam-addr", cmp.Or(os.Getenv("MINCLOUD_IAM_ADDR"), ":9910"),
-		"IAM listen address (env: MINCLOUD_IAM_ADDR)")
-	ec2Addr := flag.String("ec2-addr", cmp.Or(os.Getenv("MINCLOUD_EC2_ADDR"), ":9920"),
-		"EC2 listen address (env: MINCLOUD_EC2_ADDR)")
+	addr := flag.String("addr", cmp.Or(os.Getenv("MINCLOUD_ADDR"), ":9900"),
+		"listen address for all services (env: MINCLOUD_ADDR)")
 	verbose := flag.Bool("v", false, "log full request dumps")
 	flag.Parse()
 
 	store := credstore.New()
 	accessKeyID := loadDevCredential(store)
 
-	stsLn, err := net.Listen("tcp", *stsAddr)
+	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	iamLn, err := net.Listen("tcp", *iamAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	ec2Ln, err := net.Listen("tcp", *ec2Addr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("mincloud sts listening on %s, iam listening on %s, ec2 listening on %s (access key %s)",
-		stsLn.Addr(), iamLn.Addr(), ec2Ln.Addr(), accessKeyID)
+	log.Printf("mincloud listening on %s — services: sts, iam, ec2 (access key %s)",
+		ln.Addr(), accessKeyID)
 
-	errc := make(chan error, 3)
-	go func() { errc <- http.Serve(stsLn, sts.Handler(store, *verbose)) }()
-	go func() { errc <- http.Serve(iamLn, iam.Handler(store, *verbose)) }()
-	go func() { errc <- http.Serve(ec2Ln, ec2.Handler(store, *verbose)) }()
-	log.Fatal(<-errc)
+	log.Fatal(http.Serve(ln, router.New(map[string]http.Handler{
+		"sts": sts.Handler(store, *verbose),
+		"iam": iam.Handler(store, *verbose),
+		"ec2": ec2.Handler(store, *verbose),
+	})))
 }
 
 // loadDevCredential registers the single development credential, configurable

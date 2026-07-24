@@ -19,7 +19,7 @@ docker:
 	docker build -t $(IMAGE) .
 
 docker-run: docker
-	docker run --rm -p 9900:9900 -p 9910:9910 -p 9920:9920 $(IMAGE)
+	docker run --rm -p 9900:9900 $(IMAGE)
 
 clean:
 	rm -f $(BINARY)
