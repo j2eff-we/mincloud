@@ -1,3 +1,9 @@
 .git
-mincloud
+.gitignore
+*.md
 docs
+scripts
+mincloud
+Dockerfile
+.dockerignore
+compose.yaml

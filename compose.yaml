@@ -1,0 +1,32 @@
+# mincloud + its credential store, as two services.
+#
+# The store is DynamoDB Local — the same key-value model AWS's own control
+# plane uses — with its data on a named volume, so `compose down && up` keeps
+# every credential IAM has issued.
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    working_dir: /home/dynamodblocal
+    user: root # so the container may write the named volume's mount point
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    expose:
+      - "8000"
+
+  mincloud:
+    build: .
+    depends_on:
+      - dynamodb
+    environment:
+      MINCLOUD_DYNAMODB_ENDPOINT: http://dynamodb:8000
+      MINCLOUD_DYNAMODB_TABLE: mincloud-credentials
+      MINCLOUD_DYNAMODB_REGION: us-east-1
+    ports:
+      - "9900:9900" # all services — routed by SigV4 credential scope
+    # DynamoDB Local may still be booting when mincloud first dials it; let the
+    # process exit and be restarted until the store answers.
+    restart: on-failure
+
+volumes:
+  dynamodb-data:
