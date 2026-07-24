@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>진짜 클라이언트가 오라클이다 — mincloud</title>
+<style>
+  :root {
+    --bg: #F6F7F9; --panel: #FFFFFF; --panel2: #F0F2F5;
+    --ink: #1B1F27; --muted: #5A6372; --line: #E3E6EB;
+    --c-key: #2458D6; --c-key-bg: rgba(36, 88, 214, .10);
+    --c-scope: #A85E0A; --c-scope-bg: rgba(168, 94, 10, .11);
+    --c-hdrs: #7434D8; --c-hdrs-bg: rgba(116, 52, 216, .10);
+    --c-sig: #0E7D70; --c-sig-bg: rgba(14, 125, 112, .11);
+    --accent: #0E7D70;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", Pretendard, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161E; --panel: #1A1F29; --panel2: #151A23;
+      --ink: #E7EAF0; --muted: #949EB0; --line: #2A3140;
+      --c-key: #7BA3F5; --c-key-bg: rgba(123, 163, 245, .13);
+      --c-scope: #E0A45C; --c-scope-bg: rgba(224, 164, 92, .13);
+      --c-hdrs: #B593F0; --c-hdrs-bg: rgba(181, 147, 240, .13);
+      --c-sig: #4CC3B2; --c-sig-bg: rgba(76, 195, 178, .13);
+      --accent: #4CC3B2;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12161E; --panel: #1A1F29; --panel2: #151A23;
+    --ink: #E7EAF0; --muted: #949EB0; --line: #2A3140;
+    --c-key: #7BA3F5; --c-key-bg: rgba(123, 163, 245, .13);
+    --c-scope: #E0A45C; --c-scope-bg: rgba(224, 164, 92, .13);
+    --c-hdrs: #B593F0; --c-hdrs-bg: rgba(181, 147, 240, .13);
+    --c-sig: #4CC3B2; --c-sig-bg: rgba(76, 195, 178, .13);
+    --accent: #4CC3B2;
+  }
+  :root[data-theme="light"] {
+    --bg: #F6F7F9; --panel: #FFFFFF; --panel2: #F0F2F5;
+    --ink: #1B1F27; --muted: #5A6372; --line: #E3E6EB;
+    --c-key: #2458D6; --c-key-bg: rgba(36, 88, 214, .10);
+    --c-scope: #A85E0A; --c-scope-bg: rgba(168, 94, 10, .11);
+    --c-hdrs: #7434D8; --c-hdrs-bg: rgba(116, 52, 216, .10);
+    --c-sig: #0E7D70; --c-sig-bg: rgba(14, 125, 112, .11);
+    --accent: #0E7D70;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 56px 24px 96px; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 10px;
+  }
+  h1 { font-size: 34px; line-height: 1.25; margin: 0 0 8px; text-wrap: balance; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0 0 12px; max-width: 62ch; }
+  h2 { font-size: 21px; margin: 64px 0 6px; letter-spacing: -.01em; text-wrap: balance; }
+  h2 .step-no {
+    font-family: var(--mono); font-size: 13px; color: var(--accent);
+    margin-right: 10px; letter-spacing: .06em;
+  }
+  .sub { color: var(--muted); margin: 0 0 20px; max-width: 66ch; }
+  .sub b, p b { color: var(--ink); }
+  .sub code, p code { font-family: var(--mono); font-size: 13.5px; }
+
+  .thesis {
+    margin: 28px 0 0; padding: 18px 22px; border-left: 3px solid var(--accent);
+    background: var(--panel); border-radius: 0 10px 10px 0;
+    font-size: 17px; max-width: 66ch;
+  }
+  .thesis b { color: var(--accent); }
+
+  /* 코드/요청 패널 */
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    margin-top: 18px; overflow: hidden;
+  }
+  .panel-title {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel2);
+    letter-spacing: .05em;
+  }
+  .panel pre {
+    margin: 0; padding: 18px; overflow-x: auto;
+    font-family: var(--mono); font-size: 13.5px; line-height: 1.85;
+  }
+  .panel pre .c { color: var(--muted); }
+  .panel pre .ok { color: var(--c-sig); font-weight: 600; }
+  .panel pre .no { color: #B4443C; font-weight: 600; }
+
+  /* 계층 파이프라인 */
+  .flow { margin-top: 20px; display: grid; gap: 0; }
+  .step { display: grid; grid-template-columns: 40px 1fr; gap: 0 16px; }
+  .step .rail { display: flex; flex-direction: column; align-items: center; }
+  .step .node {
+    width: 30px; height: 30px; border-radius: 99px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 600 13px var(--mono); color: var(--accent);
+    background: var(--panel); border: 1.5px solid var(--accent);
+  }
+  .step .rail::after { content: ""; flex: 1; width: 1.5px; background: var(--line); margin: 4px 0; }
+  .step:last-child .rail::after { display: none; }
+  .step .body { padding-bottom: 26px; min-width: 0; }
+  .step h3 { margin: 3px 0 6px; font-size: 16.5px; }
+  .step h3 code { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 500; }
+  .step p { margin: 0; font-size: 14.5px; color: var(--muted); max-width: 64ch; }
+  .step p b { color: var(--ink); }
+  .step .reject {
+    display: inline-block; margin-top: 8px; font-family: var(--mono); font-size: 12px;
+    color: #B4443C; background: rgba(202, 76, 68, .1); border-radius: 6px; padding: 3px 8px;
+  }
+  .step .panel { margin-top: 12px; }
+
+  /* 마무리 카드 */
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .card .tag {
+    display: inline-block; font-family: var(--mono); font-size: 11px;
+    letter-spacing: .1em; padding: 3px 9px; border-radius: 99px; margin-bottom: 10px;
+  }
+  .card p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  .card p b { color: var(--ink); }
+  .why { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
+  @media (max-width: 720px) { .why { grid-template-columns: 1fr; } }
+  .why .card h3 { margin: 0 0 8px; font-size: 15.5px; }
+  .why .card p { font-size: 14px; }
+  .why .card:nth-child(1) .tag { color: var(--c-key); background: var(--c-key-bg); }
+  .why .card:nth-child(2) .tag { color: var(--c-hdrs); background: var(--c-hdrs-bg); }
+  .why .card:nth-child(3) .tag { color: var(--c-sig); background: var(--c-sig-bg); }
+
+  .footnote { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
+    font-size: 13.5px; color: var(--muted); }
+  .footnote code { font-family: var(--mono); font-size: 12.5px; }
+</style>
+
+<main>
+  <p class="eyebrow">mincloud · testing</p>
+  <h1>진짜 클라이언트가 오라클이다</h1>
+  <p class="lede">AWS 호환 서버의 테스트 전략 — "우리끼리 맞다"는 회귀 테스트를 넘어, 진짜 AWS 도구가 만든 기준값과 진짜 aws CLI의 판정으로 호환성을 증명하는 세 계층.</p>
+
+  <div class="thesis">
+    호환성은 <b>스스로 증명할 수 없다.</b><br>
+    내가 만든 서명기로 내가 만든 검증기를 테스트하면, 둘이 같은 오해를 공유해도 통과한다.
+    기준값(oracle)은 반드시 <b>진짜 AWS 도구</b>에서 와야 한다.
+  </div>
+
+  <h2><span class="step-no">L1</span>캡처 벡터 유닛테스트 — AWS가 만든 정답지</h2>
+  <p class="sub"><code>internal/sigv4</code>의 테스트는 자체 서명기가 아니라 <b>실제 AWS CLI v2가 만든 서명 2개</b>를 기준값으로 쓴다. 테스트용 가짜 키(<code>MINCLOUDTESTKEY0000A</code>)로 <code>aws sts get-caller-identity</code>를 두 번 실행해 캡처한 <code>X-Amz-Date</code>와 <code>Signature</code> 쌍이다.</p>
+
+  <div class="panel">
+    <div class="panel-title">internal/sigv4/sigv4_test.go — 캡처된 테스트 벡터</div>
+    <pre>var capturedRequests = []struct {
+	name      string
+	amzDate   string
+	signature string
+}{
+	{"first capture",  "20260705T112547Z", "285b60204ba0de27…306dab85"},
+	{"second capture", "20260705T112814Z", "3e4361b978419419…20bb3984"},
+}</pre>
+  </div>
+
+  <p class="sub" style="margin-top:20px"><code>TestVerifyCapturedRequests</code>는 같은 요청을 재구성해 <code>ComputeSignature</code>가 캡처된 서명과 <b>바이트 단위로 일치</b>하는지 확인한다. 통과 = mincloud의 서명 계산이 AWS 구현과 정확히 같다는 증명. 네거티브도 같은 벡터로 검증한다 — 틀린 시크릿(<code>TestVerifyRejectsWrongSecret</code>), 본문 변조(<code>TestVerifyRejectsTamperedBody</code>) 모두 <code>ErrSignatureMismatch</code>여야 한다.</p>
+
+  <h2><span class="step-no">L2</span>핸들러 유닛테스트 — 증명 위에 쌓는 자체 서명</h2>
+  <p class="sub">검증기가 L1에서 이미 증명됐으므로, 핸들러 테스트는 매번 CLI를 부를 필요가 없다. <code>sts</code>·<code>ec2</code> 테스트의 <code>signedRequest</code> 헬퍼는 <code>sigv4.ComputeSignature</code>로 <b>자체 서명한 요청</b>을 만들어 핸들러에 넣는다 — 라우팅, 에러 코드, XML 구조에 집중하기 위해서다.</p>
+
+  <p class="sub">여기서 가장 재밌는 테스트는 <b>잘못된 서비스 스코프 거부</b>다. <code>iam</code>으로 서명한 요청을 <code>sts</code> 핸들러에 보내면, 액세스키와 시크릿이 <b>전부 유효한데도</b> 거부돼야 한다 — 서버가 자기 서비스 이름으로 서명을 재계산하므로 스코프가 다르면 서명이 어긋난다.</p>
+
+  <div class="panel">
+    <div class="panel-title">internal/service/sts/sts_test.go — TestRejectsWrongServiceScope</div>
+    <pre><span class="c">// Signed for iam, sent to the sts handler: must be rejected even though
+// the access key and secret are valid.</span>
+r := signedRequest(t, "iam", body)
+
+Handler(store, false).ServeHTTP(w, r)
+
+<span class="c">// 기대: 403 + &lt;Error&gt;&lt;Code&gt;SignatureDoesNotMatch&lt;/Code&gt;…</span></pre>
+  </div>
+
+  <p class="sub" style="margin-top:20px">ec2 쪽도 같은 방식이다 — <code>TestRunThenDescribeInstances</code>는 RunInstances가 <code>pending</code> 2대를 돌려주고 DescribeInstances에서 <code>running</code>으로 보이는 상태 전이를, <code>TestErrorUsesEC2ResponseShape</code>는 에러가 EC2 고유의 <code>&lt;Response&gt;</code> 형태(다른 서비스의 <code>&lt;ErrorResponse&gt;</code>가 아니라)로 나가는지를 확인한다.</p>
+
+  <h2><span class="step-no">L3</span>e2e — 진짜 aws CLI가 최종 판정한다</h2>
+  <p class="sub"><code>scripts/e2e.sh</code>는 서버를 실제로 빌드해 띄우고 <b>진짜 aws CLI</b>로 6가지를 체크한다. 통과 = 진짜 AWS 도구가 우리의 와이어 응답을 받아들인다는 뜻. aws CLI가 없는 환경에선 <code>SKIP</code>을 출력하고 성공으로 종료해 CI를 배려한다.</p>
+
+  <div class="flow">
+    <div class="step">
+      <div class="rail"><div class="node">a</div></div>
+      <div class="body">
+        <h3>키 발급 → 재인증 라이프사이클</h3>
+        <p><code>aws iam create-access-key --user-name alice</code>로 새 키를 발급받고, <b>그 키로 다시</b> <code>sts get-caller-identity</code>를 호출해 <code>arn:aws:iam::123456789012:user/alice</code>가 돌아오는지 본다. 발급 → 저장 → 인증이 한 바퀴 도는 체크다.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="rail"><div class="node">b</div></div>
+      <div class="body">
+        <h3>네거티브: 틀린 시크릿 거부</h3>
+        <p><code>AWS_SECRET_ACCESS_KEY=wrong-secret</code>으로 호출이 <b>성공하면 실패</b>다. 긍정 체크만 있는 e2e는 "인증을 아예 안 해도" 통과할 수 있기 때문에, 거부가 되는지도 반드시 확인한다.</p>
+        <span class="reject">성공해버리면 → FAIL: request with wrong secret was accepted</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">$ ./scripts/e2e.sh</div>
+    <pre><span class="ok">ok 1</span> - sts get-caller-identity returns account 123456789012
+<span class="ok">ok 2</span> - iam create-access-key issues a key for alice
+<span class="ok">ok 3</span> - new key authenticates as arn:...:user/alice
+<span class="ok">ok 4</span> - ec2 run-instances reports pending
+<span class="ok">ok 5</span> - ec2 describe-instances shows i-a328a6f918b16bbdc as running
+<span class="ok">ok 6</span> - wrong secret is rejected
+<span class="ok">PASS: 6 e2e checks</span></pre>
+  </div>
+
+  <h2>각 계층이 잡는 버그는 다르다</h2>
+  <p class="sub">세 계층은 중복이 아니라 분업이다. 아래 계층이 증명한 것을 위 계층은 가정하고, 위 계층만 잡을 수 있는 버그에 집중한다.</p>
+
+  <div class="why">
+    <div class="card">
+      <span class="tag">L1 · 캡처 벡터</span>
+      <h3>서명 알고리즘의 바이트 편차</h3>
+      <p>정규화 순서, 인코딩, HMAC 체인 등 <b>1바이트만 달라도</b> AWS와 어긋나는 종류의 버그. AWS가 만든 정답지와의 대조로만 잡힌다.</p>
+    </div>
+    <div class="card">
+      <span class="tag">L2 · 핸들러</span>
+      <h3>라우팅 · 에러 코드 · XML 회귀</h3>
+      <p>잘못된 서비스로 요청이 새는 것, 에러 코드가 바뀌는 것, 응답 XML 구조가 깨지는 것 — <b>빠르고 촘촘하게</b> 잡는다.</p>
+    </div>
+    <div class="card">
+      <span class="tag">L3 · e2e</span>
+      <h3>진짜 클라이언트만 아는 기대치</h3>
+      <p>CLI의 파싱 실패, 우리가 몰랐던 필수 필드 누락 — <b>스펙 문서엔 없고 실제 클라이언트 코드에만 있는</b> 기대를 어겼을 때 잡힌다.</p>
+    </div>
+  </div>
+
+  <p class="footnote">
+    다음 단계: 오라클을 하나 더 늘린다 — <b>Terraform을 4번째 오라클로</b>. aws CLI와는 다른 SDK 경로와 다른 기대치를 가진 클라이언트라,
+    같은 서버를 다른 각도에서 검증해 준다. 본문의 키/시크릿/서명은 모두 테스트용 가짜 값이며,
+    출처는 <code>internal/sigv4/sigv4_test.go</code> · <code>internal/service/sts/sts_test.go</code> · <code>internal/service/ec2/ec2_test.go</code> · <code>scripts/e2e.sh</code>.
+  </p>
+</main>
+
+</html>

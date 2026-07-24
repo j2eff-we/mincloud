@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>포트 하나로 모든 AWS 서비스 — mincloud</title>
+<style>
+  :root {
+    --bg: #F6F7F9; --panel: #FFFFFF; --panel2: #F0F2F5;
+    --ink: #1B1F27; --muted: #5A6372; --line: #E3E6EB;
+    --c-key: #2458D6; --c-key-bg: rgba(36, 88, 214, .10);
+    --c-scope: #A85E0A; --c-scope-bg: rgba(168, 94, 10, .11);
+    --c-hdrs: #7434D8; --c-hdrs-bg: rgba(116, 52, 216, .10);
+    --c-sig: #0E7D70; --c-sig-bg: rgba(14, 125, 112, .11);
+    --accent: #0E7D70;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", Pretendard, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161E; --panel: #1A1F29; --panel2: #151A23;
+      --ink: #E7EAF0; --muted: #949EB0; --line: #2A3140;
+      --c-key: #7BA3F5; --c-key-bg: rgba(123, 163, 245, .13);
+      --c-scope: #E0A45C; --c-scope-bg: rgba(224, 164, 92, .13);
+      --c-hdrs: #B593F0; --c-hdrs-bg: rgba(181, 147, 240, .13);
+      --c-sig: #4CC3B2; --c-sig-bg: rgba(76, 195, 178, .13);
+      --accent: #4CC3B2;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12161E; --panel: #1A1F29; --panel2: #151A23;
+    --ink: #E7EAF0; --muted: #949EB0; --line: #2A3140;
+    --c-key: #7BA3F5; --c-key-bg: rgba(123, 163, 245, .13);
+    --c-scope: #E0A45C; --c-scope-bg: rgba(224, 164, 92, .13);
+    --c-hdrs: #B593F0; --c-hdrs-bg: rgba(181, 147, 240, .13);
+    --c-sig: #4CC3B2; --c-sig-bg: rgba(76, 195, 178, .13);
+    --accent: #4CC3B2;
+  }
+  :root[data-theme="light"] {
+    --bg: #F6F7F9; --panel: #FFFFFF; --panel2: #F0F2F5;
+    --ink: #1B1F27; --muted: #5A6372; --line: #E3E6EB;
+    --c-key: #2458D6; --c-key-bg: rgba(36, 88, 214, .10);
+    --c-scope: #A85E0A; --c-scope-bg: rgba(168, 94, 10, .11);
+    --c-hdrs: #7434D8; --c-hdrs-bg: rgba(116, 52, 216, .10);
+    --c-sig: #0E7D70; --c-sig-bg: rgba(14, 125, 112, .11);
+    --accent: #0E7D70;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 56px 24px 96px; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 10px;
+  }
+  h1 { font-size: 34px; line-height: 1.25; margin: 0 0 8px; text-wrap: balance; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0 0 12px; max-width: 62ch; }
+  h2 { font-size: 21px; margin: 64px 0 6px; letter-spacing: -.01em; text-wrap: balance; }
+  h2 .step-no {
+    font-family: var(--mono); font-size: 13px; color: var(--accent);
+    margin-right: 10px; letter-spacing: .06em;
+  }
+  .sub { color: var(--muted); margin: 0 0 20px; max-width: 66ch; }
+  .sub b, p b { color: var(--ink); }
+  .sub code, p code { font-family: var(--mono); font-size: 13.5px; }
+
+  .thesis {
+    margin: 28px 0 0; padding: 18px 22px; border-left: 3px solid var(--accent);
+    background: var(--panel); border-radius: 0 10px 10px 0;
+    font-size: 17px; max-width: 66ch;
+  }
+  .thesis b { color: var(--accent); }
+  .thesis code { font-family: var(--mono); font-size: 14px; }
+
+  /* 카드 */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+  @media (max-width: 620px) { .cards { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .card .tag {
+    display: inline-block; font-family: var(--mono); font-size: 11px;
+    letter-spacing: .1em; padding: 3px 9px; border-radius: 99px; margin-bottom: 10px;
+  }
+  .card.pub .tag { color: var(--c-key); background: var(--c-key-bg); }
+  .card.sec .tag { color: var(--c-sig); background: var(--c-sig-bg); }
+  .card.warn .tag { color: #B4443C; background: rgba(202, 76, 68, .1); }
+  .card .val { font-family: var(--mono); font-size: 13.5px; word-break: break-all; margin: 0 0 10px; }
+  .card p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  .card p b { color: var(--ink); }
+  .card h3 { margin: 0 0 8px; font-size: 15.5px; }
+
+  /* 코드/요청 패널 */
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    margin-top: 18px; overflow: hidden;
+  }
+  .panel-title {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel2);
+    letter-spacing: .05em;
+  }
+  .panel pre {
+    margin: 0; padding: 18px; overflow-x: auto;
+    font-family: var(--mono); font-size: 13.5px; line-height: 1.85;
+  }
+  .panel pre .c { color: var(--muted); }
+  .panel pre .bad { color: #B4443C; }
+
+  mark {
+    color: inherit; border-radius: 4px; padding: 1.5px 4px;
+  }
+  mark.key { background: var(--c-key-bg); color: var(--c-key); }
+  mark.scope { background: var(--c-scope-bg); color: var(--c-scope); }
+  mark.hdrs { background: var(--c-hdrs-bg); color: var(--c-hdrs); }
+  mark.sig { background: var(--c-sig-bg); color: var(--c-sig); }
+
+  /* 파이프라인 */
+  .flow { margin-top: 20px; display: grid; gap: 0; }
+  .step { display: grid; grid-template-columns: 40px 1fr; gap: 0 16px; }
+  .step .rail { display: flex; flex-direction: column; align-items: center; }
+  .step .node {
+    width: 30px; height: 30px; border-radius: 99px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 600 13px var(--mono); color: var(--accent);
+    background: var(--panel); border: 1.5px solid var(--accent);
+  }
+  .step .rail::after { content: ""; flex: 1; width: 1.5px; background: var(--line); margin: 4px 0; }
+  .step:last-child .rail::after { display: none; }
+  .step .body { padding-bottom: 26px; min-width: 0; }
+  .step h3 { margin: 3px 0 6px; font-size: 16.5px; }
+  .step h3 code { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 500; }
+  .step p { margin: 0; font-size: 14.5px; color: var(--muted); max-width: 64ch; }
+  .step p b { color: var(--ink); }
+  .step .reject {
+    display: inline-block; margin-top: 8px; font-family: var(--mono); font-size: 12px;
+    color: #B4443C; background: rgba(202, 76, 68, .1); border-radius: 6px; padding: 3px 8px;
+  }
+  .step .panel { margin-top: 12px; }
+
+  /* why 카드 */
+  .why { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
+  @media (max-width: 720px) { .why { grid-template-columns: 1fr; } }
+  .why .card h3 { margin: 0 0 8px; font-size: 15.5px; }
+  .why .card h3 code { font-family: var(--mono); font-size: 13px; }
+  .why .card p { font-size: 14px; }
+  .why .card .code { display: inline-block; margin-bottom: 8px; font-family: var(--mono); font-size: 12px;
+    color: #B4443C; background: rgba(202, 76, 68, .1); border-radius: 6px; padding: 3px 8px; }
+
+  .footnote { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
+    font-size: 13.5px; color: var(--muted); }
+  .footnote code { font-family: var(--mono); font-size: 12.5px; }
+</style>
+
+<main>
+  <p class="eyebrow">mincloud · internal/router</p>
+  <h1>포트 하나로 모든 AWS 서비스 — SigV4 스코프 라우팅</h1>
+  <p class="lede">sts · iam · ec2를 서비스마다 포트 하나씩 열다가, nginx 경로 라우팅과 /etc/hosts 호스트 라우팅을 거쳐, 결국 요청이 이미 들고 있던 답을 발견하기까지 — 단일 포트 라우터의 설계 여정.</p>
+
+  <div class="thesis">
+    클라이언트는 서명하는 순간 <b>목적지 서비스를 스스로 선언한다.</b><br>
+    <code>Credential=…/20260724/ap-northeast-2/<b>ec2</b>/aws4_request</code> — 세 번째 조각이 곧 라우팅 키다.
+  </div>
+
+  <h2>문제: 서비스 하나 = 포트 하나?</h2>
+  <p class="sub">처음 구조는 단순했다. sts는 9900, iam은 9910, ec2는 9920. 서비스가 셋일 때는 견딜 만하지만, <b>서비스를 하나 추가할 때마다 늘어나는 것</b>들을 세어 보면 이야기가 달라진다.</p>
+
+  <div class="panel">
+    <div class="panel-title">.env — 서비스당 포트 시절의 클라이언트 설정</div>
+    <pre>AWS_ENDPOINT_URL_STS=http://localhost:9900
+AWS_ENDPOINT_URL_IAM=http://localhost:9910
+AWS_ENDPOINT_URL_EC2=http://localhost:9920
+<span class="c"># S3 붙이면 9930, DynamoDB 붙이면 9940, …</span></pre>
+  </div>
+
+  <p class="sub" style="margin-top:20px">포트 번호 하나, 환경변수 하나, 서버 쪽 리스너 하나, 그리고 "이 서비스는 몇 번이었지?"라는 기억 부담 하나. S3, DynamoDB까지 가면 포트 지옥이다. <b>진짜 AWS는 서비스가 200개가 넘어도 클라이언트 설정은 리전 하나로 끝난다</b> — 우리도 엔드포인트 하나로 줄이고 싶다.</p>
+
+  <h2><span class="step-no">시도 1</span>nginx 경로 라우팅 — 서명이 깨진다</h2>
+  <p class="sub">흔한 리버스 프록시 패턴부터 떠올렸다. <code>localhost/ec2</code>로 받아서 프록시가 <code>/ec2</code> 프리픽스를 떼고 백엔드로 넘기는 구조. 웹 앱이라면 잘 동작하지만, SigV4 앞에서는 무너진다. <b>SigV4는 URI 경로를 canonical request에 포함해 서명하기 때문이다.</b></p>
+
+  <div class="panel">
+    <div class="panel-title">canonical request — 두 번째 줄이 경로다 (sigv4-anatomy 참고)</div>
+    <pre>POST
+<mark class="sig">/ec2</mark>                    <span class="c">← 클라이언트가 서명한 경로</span>
+<span class="c">(정렬된 쿼리스트링)</span>
+content-type:application/x-www-form-urlencoded; charset=utf-8
+host:localhost
+x-amz-date:20260724T031500Z
+…</pre>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">nginx가 /ec2 를 떼고 넘긴 뒤 — 서버의 재계산</div>
+    <pre>POST
+<span class="bad">/</span>                       <span class="c">← 서버가 보는 경로. 1바이트만 달라도 HMAC은 전혀 다른 값</span>
+…
+<span class="bad">→ 403 SignatureDoesNotMatch</span></pre>
+  </div>
+
+  <p class="sub" style="margin-top:20px">클라이언트는 <code>/ec2</code>를 넣고 서명했는데 서버는 <code>/</code>로 재계산하니 서명이 절대 일치할 수 없다. 그럼 프리픽스를 안 떼면? 이번엔 모든 서비스 핸들러가 <code>/ec2</code> 프리픽스를 알아야 하고, 결국 Go 안에서 경로를 보고 다시 라우팅해야 한다. <b>어차피 Go에서 라우팅할 거라면 nginx는 무의미하다.</b></p>
+
+  <h2><span class="step-no">시도 2</span>/etc/hosts + 호스트 라우팅 — 동작하지만 셋업이 깨진다</h2>
+  <p class="sub">그럼 진짜 AWS처럼 호스트네임으로 갈라보자. <code>ec2.jeff.local</code>, <code>sts.jeff.local</code>을 /etc/hosts에 등록하고 Host 헤더로 라우팅하는 방식이다.</p>
+
+  <div class="cards">
+    <div class="card sec">
+      <span class="tag">동작한다</span>
+      <p>Host 헤더도 SignedHeaders에 들어가 서명되지만, <b>클라이언트와 서버가 같은 값을 본다</b> — 아무도 중간에서 바꾸지 않으니 서명은 깨지지 않는다. <code style="font-size:13px">ec2.ap-northeast-2.amazonaws.com</code>처럼 실제 AWS와 가장 비슷한 모양이기도 하다.</p>
+    </div>
+    <div class="card warn">
+      <span class="tag">그러나</span>
+      <p>/etc/hosts 수정에는 <b>sudo가 필요하고, 머신마다 다시 해줘야 한다</b>. mincloud의 약속인 <b>"클론하고 make run"</b>이 여기서 깨진다. 코드 밖의 시스템 설정에 기대는 순간 재현 가능성이 사라진다.</p>
+    </div>
+  </div>
+
+  <h2>해답: 답은 이미 요청 안에 있었다</h2>
+  <p class="sub">Authorization 헤더를 다시 보자. SigV4는 서명의 유효 범위를 크리덴셜 스코프로 못 박는데, 그 안에 <b>서비스 이름이 이미 들어 있다.</b></p>
+
+  <div class="panel">
+    <div class="panel-title">Authorization 헤더 — 세 번째 조각이 목적지</div>
+    <pre>Authorization: AWS4-HMAC-SHA256
+    Credential=<mark class="key">MINCLOUDTESTKEY0000A</mark>/<mark class="scope">20260724</mark>/<mark class="scope">ap-northeast-2</mark>/<mark class="sig">ec2</mark>/aws4_request,
+    SignedHeaders=<mark class="hdrs">content-type;host;x-amz-date</mark>,
+    Signature=…
+
+<span class="c">날짜 / 리전 / </span><mark class="sig">서비스</mark><span class="c"> / aws4_request — 서명 키 파생 체인에도 이 서비스 이름이 들어간다</span></pre>
+  </div>
+
+  <p class="sub" style="margin-top:20px">이건 서버가 추측한 값이 아니다. <b>클라이언트가 서명하는 시점에 스스로 선언한 목적지</b>이고, 다른 서비스용 서명은 그 서비스에서 무효가 되도록 설계된 값이다. 그렇다면 서버는 경로도 호스트도 볼 필요 없이, Authorization 헤더 하나만 파싱해서 디스패치하면 된다. 포트도, nginx도, /etc/hosts도 필요 없다.</p>
+
+  <div class="flow">
+    <div class="step">
+      <div class="rail"><div class="node">1</div></div>
+      <div class="body">
+        <h3>Authorization 헤더 존재 확인</h3>
+        <p>헤더가 아예 없으면 어느 서비스로 보낼지조차 알 수 없다.</p>
+        <span class="reject">없음 → 403 MissingAuthenticationToken</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="rail"><div class="node">2</div></div>
+      <div class="body">
+        <h3>스코프 파싱 <code>sigv4.ParseAuthorization</code></h3>
+        <p>검증 파이프라인 1단계에서 쓰던 <b>파서를 그대로 재사용</b>한다. 파싱 결과 <code>Authorization</code> 구조체의 <code>Service</code> 필드가 라우팅 키.</p>
+        <span class="reject">파싱 실패 → 403 IncompleteSignature</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="rail"><div class="node">3</div></div>
+      <div class="body">
+        <h3>테이블 조회 후 디스패치 <code>services[auth.Service]</code></h3>
+        <p><code>map[string]http.Handler</code>에서 핸들러를 찾아 요청을 통째로 넘긴다. <b>서명 검증은 각 서비스 핸들러 안에 그대로 남는다</b> — 라우터는 봉투의 주소만 읽는 얇은 글루일 뿐, 봉인을 뜯지 않는다.</p>
+        <span class="reject">모르는 서비스 → 400 UnknownService</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>코드: 라우터 전체가 이게 전부다</h2>
+  <p class="sub">핵심 분기 세 개, 에러 세 종류. 실제 AWS와 같은 XML 에러 포맷으로 응답하므로 aws CLI가 그대로 알아듣는다.</p>
+
+  <div class="panel">
+    <div class="panel-title">internal/router/router.go — New()</div>
+    <pre>func New(services map[string]http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        authHeader := r.Header.Get("Authorization")
+        if authHeader == "" {
+            writeError(w, http.StatusForbidden, "MissingAuthenticationToken",
+                "Request is missing Authentication Token")
+            return
+        }
+        auth, err := sigv4.ParseAuthorization(authHeader)
+        if err != nil {
+            writeError(w, http.StatusForbidden, "IncompleteSignature", err.Error())
+            return
+        }
+        h, ok := services[auth.Service]
+        if !ok {
+            writeError(w, http.StatusBadRequest, "UnknownService",
+                "mincloud does not implement service '"+auth.Service+"'")
+            return
+        }
+        h.ServeHTTP(w, r)
+    })
+}</pre>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">cmd/mincloud/main.go — 조립은 테이블 하나</div>
+    <pre>log.Fatal(http.Serve(ln, router.New(map[string]http.Handler{
+    "sts": sts.Handler(store, *verbose),
+    "iam": iam.Handler(store, *verbose),
+    "ec2": ec2.Handler(store, *verbose),
+})))</pre>
+  </div>
+
+  <p class="sub" style="margin-top:20px">이제 서비스 추가는 <b>패키지 하나 + 테이블 한 줄</b>이다. 포트도, 환경변수도, 리스너도 늘지 않는다.</p>
+
+  <div class="why">
+    <div class="card">
+      <span class="code">403 MissingAuthenticationToken</span>
+      <h3>헤더 없음</h3>
+      <p>Authorization 헤더가 아예 없는 요청. 목적지를 알 방법이 없다.</p>
+    </div>
+    <div class="card">
+      <span class="code">403 IncompleteSignature</span>
+      <h3>헤더 깨짐</h3>
+      <p>헤더는 있지만 SigV4 형식이 아니거나 스코프가 손상된 요청.</p>
+    </div>
+    <div class="card">
+      <span class="code">400 UnknownService</span>
+      <h3>모르는 서비스</h3>
+      <p>스코프는 멀쩡하지만 mincloud가 아직 구현하지 않은 서비스.</p>
+    </div>
+  </div>
+
+  <h2>보너스: LocalStack의 4566이 이해된다</h2>
+  <p class="sub">LocalStack이 수십 개 AWS 서비스를 <b>단일 포트 4566</b>으로 받는 이유가 바로 이 메커니즘이다. SigV4를 구현하는 순간 모든 요청이 목적지 라벨을 달고 오니, 단일 엔드포인트는 공짜로 따라온다. 그리고 클라이언트 설정은 이렇게 줄어든다.</p>
+
+  <div class="panel">
+    <div class="panel-title">.env — 단일 포트 이후</div>
+    <pre>AWS_ENDPOINT_URL=http://localhost:9900   <span class="c">← aws CLI v2의 글로벌 엔드포인트 환경변수. 이 한 줄이 전부</span></pre>
+  </div>
+
+  <p class="footnote">
+    이 라우터는 <b>프로세스 내 글루</b>일 뿐이다. 서비스가 별도 프로세스로 분리되는 날이 오면 게이트웨이가 이 자리를 맡고, 서비스 핸들러는 그대로 이동한다.
+    남은 숙제 하나: S3의 <b>presigned URL과 익명 요청</b>은 Authorization 헤더가 없다 — 그때는 Host/경로 분기를 함께 쓸 예정이다.
+    본문의 캡처는 <code>internal/router/router_test.go</code>의 시나리오(스코프별 디스패치, UnknownService, MissingAuthenticationToken)와 동일하다.
+  </p>
+</main>
+
+</html>

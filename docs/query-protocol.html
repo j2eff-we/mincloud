@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Query 프로토콜 해부 — mincloud</title>
+<style>
+  :root {
+    --bg: #F6F7F9; --panel: #FFFFFF; --panel2: #F0F2F5;
+    --ink: #1B1F27; --muted: #5A6372; --line: #E3E6EB;
+    --c-key: #2458D6; --c-key-bg: rgba(36, 88, 214, .10);
+    --c-scope: #A85E0A; --c-scope-bg: rgba(168, 94, 10, .11);
+    --c-hdrs: #7434D8; --c-hdrs-bg: rgba(116, 52, 216, .10);
+    --c-sig: #0E7D70; --c-sig-bg: rgba(14, 125, 112, .11);
+    --accent: #0E7D70;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", Pretendard, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161E; --panel: #1A1F29; --panel2: #151A23;
+      --ink: #E7EAF0; --muted: #949EB0; --line: #2A3140;
+      --c-key: #7BA3F5; --c-key-bg: rgba(123, 163, 245, .13);
+      --c-scope: #E0A45C; --c-scope-bg: rgba(224, 164, 92, .13);
+      --c-hdrs: #B593F0; --c-hdrs-bg: rgba(181, 147, 240, .13);
+      --c-sig: #4CC3B2; --c-sig-bg: rgba(76, 195, 178, .13);
+      --accent: #4CC3B2;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12161E; --panel: #1A1F29; --panel2: #151A23;
+    --ink: #E7EAF0; --muted: #949EB0; --line: #2A3140;
+    --c-key: #7BA3F5; --c-key-bg: rgba(123, 163, 245, .13);
+    --c-scope: #E0A45C; --c-scope-bg: rgba(224, 164, 92, .13);
+    --c-hdrs: #B593F0; --c-hdrs-bg: rgba(181, 147, 240, .13);
+    --c-sig: #4CC3B2; --c-sig-bg: rgba(76, 195, 178, .13);
+    --accent: #4CC3B2;
+  }
+  :root[data-theme="light"] {
+    --bg: #F6F7F9; --panel: #FFFFFF; --panel2: #F0F2F5;
+    --ink: #1B1F27; --muted: #5A6372; --line: #E3E6EB;
+    --c-key: #2458D6; --c-key-bg: rgba(36, 88, 214, .10);
+    --c-scope: #A85E0A; --c-scope-bg: rgba(168, 94, 10, .11);
+    --c-hdrs: #7434D8; --c-hdrs-bg: rgba(116, 52, 216, .10);
+    --c-sig: #0E7D70; --c-sig-bg: rgba(14, 125, 112, .11);
+    --accent: #0E7D70;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 56px 24px 96px; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 10px;
+  }
+  h1 { font-size: 34px; line-height: 1.25; margin: 0 0 8px; text-wrap: balance; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0 0 12px; max-width: 62ch; }
+  h2 { font-size: 21px; margin: 64px 0 6px; letter-spacing: -.01em; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0 0 20px; max-width: 66ch; }
+  .sub b, p b { color: var(--ink); }
+  .sub code, p code { font-family: var(--mono); font-size: 13.5px; }
+
+  .thesis {
+    margin: 28px 0 0; padding: 18px 22px; border-left: 3px solid var(--accent);
+    background: var(--panel); border-radius: 0 10px 10px 0;
+    font-size: 17px; max-width: 66ch;
+  }
+  .thesis b { color: var(--accent); }
+  .thesis code { font-family: var(--mono); font-size: 14px; }
+
+  /* 카드 */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+  @media (max-width: 620px) { .cards { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .card .tag {
+    display: inline-block; font-family: var(--mono); font-size: 11px;
+    letter-spacing: .1em; padding: 3px 9px; border-radius: 99px; margin-bottom: 10px;
+  }
+  .card.pub .tag { color: var(--c-key); background: var(--c-key-bg); }
+  .card.sec .tag { color: var(--c-sig); background: var(--c-sig-bg); }
+  .card .val { font-family: var(--mono); font-size: 13.5px; word-break: break-all; margin: 0 0 10px; }
+  .card p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  .card p b { color: var(--ink); }
+  .card h3 { margin: 0 0 8px; font-size: 15.5px; }
+
+  /* 코드/요청 패널 */
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    margin-top: 18px; overflow: hidden;
+  }
+  .panel-title {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel2);
+    letter-spacing: .05em;
+  }
+  .panel pre {
+    margin: 0; padding: 18px; overflow-x: auto;
+    font-family: var(--mono); font-size: 13.5px; line-height: 1.85;
+  }
+  .panel pre .c { color: var(--muted); }
+
+  mark {
+    color: inherit; border-radius: 4px; padding: 1.5px 4px;
+    transition: opacity .15s ease;
+  }
+  mark.key { background: var(--c-key-bg); color: var(--c-key); }
+  mark.scope { background: var(--c-scope-bg); color: var(--c-scope); }
+  mark.hdrs { background: var(--c-hdrs-bg); color: var(--c-hdrs); }
+  mark.sig { background: var(--c-sig-bg); color: var(--c-sig); }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+  .legend button {
+    font: 500 13.5px/1 var(--sans); color: var(--ink);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 99px;
+    padding: 8px 14px 8px 10px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  }
+  .legend button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 3px; }
+  .legend [data-part="key"] .dot { background: var(--c-key); }
+  .legend [data-part="scope"] .dot { background: var(--c-scope); }
+  .legend [data-part="hdrs"] .dot { background: var(--c-hdrs); }
+  .legend [data-part="sig"] .dot { background: var(--c-sig); }
+  .anatomy.focus-key mark:not(.key),
+  .anatomy.focus-scope mark:not(.scope),
+  .anatomy.focus-hdrs mark:not(.hdrs),
+  .anatomy.focus-sig mark:not(.sig) { opacity: .25; }
+
+  .legend-desc {
+    margin-top: 14px; display: grid; gap: 8px; font-size: 14.5px;
+  }
+  .legend-desc div { display: flex; gap: 10px; align-items: baseline; }
+  .legend-desc .name { font-family: var(--mono); font-size: 13px; white-space: nowrap; font-weight: 600; }
+  .legend-desc .name.key { color: var(--c-key); }
+  .legend-desc .name.scope { color: var(--c-scope); }
+  .legend-desc .name.hdrs { color: var(--c-hdrs); }
+  .legend-desc .name.sig { color: var(--c-sig); }
+  .legend-desc span { color: var(--muted); }
+  .legend-desc span b { color: var(--ink); }
+
+  /* 나란히 비교 패널 */
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+  @media (max-width: 720px) { .duo { grid-template-columns: 1fr; } }
+  .duo .panel { margin-top: 0; }
+
+  /* 네임스페이스 표 */
+  .nstable { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 14px; }
+  .nstable th, .nstable td {
+    text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line);
+  }
+  .nstable th {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  .nstable td code { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+  .nstable td:first-child { font-weight: 600; white-space: nowrap; }
+  .nstable .note { color: var(--muted); font-size: 13px; }
+
+  /* why 카드 */
+  .why { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
+  @media (max-width: 720px) { .why { grid-template-columns: 1fr; } }
+  .why .card h3 { margin: 0 0 8px; font-size: 15.5px; }
+  .why .card p { font-size: 14px; }
+
+  .footnote { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
+    font-size: 13.5px; color: var(--muted); }
+  .footnote code { font-family: var(--mono); font-size: 12.5px; }
+</style>
+
+<main>
+  <p class="eyebrow">mincloud · internal/service</p>
+  <h1>Query 프로토콜 해부 — Action 하나로 움직이는 AWS API</h1>
+  <p class="lede">aws CLI가 mincloud로 보내는 요청은 겉보기에 전부 똑같다. <code style="font-family:var(--mono);font-size:13.5px">POST /</code> 하나. 그런데 어떻게 IAM 키 발급도 되고 EC2 인스턴스 기동도 될까 — form 본문 한 줄이 API 전체를 지배하는 Query 프로토콜의 해부.</p>
+
+  <div class="thesis">
+    이 API는 <b>REST가 아니다.</b> URL 경로도, HTTP 메서드 구분도 없다.<br>
+    모든 요청이 <code>POST /</code>이고, form-encoded 본문의 <b><code>Action=...&amp;Version=...</code>이 곧 API 호출</b>이다.
+  </div>
+
+  <h2>1. 라우터는 URL이 아니라 본문을 본다</h2>
+  <p class="sub">REST라면 <code>POST /instances</code>, <code>GET /users/jeff/keys</code> 같은 경로가 있어야 한다. Query 프로토콜에는 없다. 서버가 하는 일은 본문을 <code>url.ParseQuery</code>로 풀고 <b><code>Action</code> 파라미터 하나로 switch</b> 하는 것이 전부다. mincloud의 세 서비스 핸들러(iam, sts, ec2)는 모두 정확히 이 구조다.</p>
+
+  <div class="panel">
+    <div class="panel-title">internal/service/ec2/ec2.go — 핸들러의 뼈대 (iam, sts도 동일한 구조)</div>
+    <pre>form, _ := url.ParseQuery(string(body))   <span class="c">// 본문 = 쿼리스트링 문법</span>
+action := form.Get("Action")
+
+switch action {
+case "RunInstances":       runInstances(w, reg, cred.Identity.Account, form)
+case "DescribeInstances":  describeInstances(w, reg)
+case "DescribeRegions":    describeRegions(w)
+default:
+    writeError(w, http.StatusBadRequest, "InvalidAction",
+        "The action "+action+" is not valid for this web service.")
+}</pre>
+  </div>
+
+  <p class="sub" style="margin-top:18px">그럼 "어느 서비스로 온 요청인가"는 무엇이 구분할까? <b>SigV4 서명의 credential scope</b>다. 서명에 박힌 서비스 이름(<code>.../ap-northeast-2/ec2/aws4_request</code>)이 핸들러의 서비스와 다르면 <code>service.Authenticate</code>가 <code>SignatureDoesNotMatch</code>로 거부한다 — 실제 AWS와 같은 동작이다. <a href="sigv4-anatomy.html" style="color:var(--accent)">SigV4 검증 해부</a> 편에서 다룬 그 스코프가 여기서 라우팅 경계 역할까지 한다.</p>
+
+  <h2>2. 실제 요청 해부: aws ec2 run-instances</h2>
+  <p class="sub"><code>aws ec2 run-instances --image-id ami-12345678 --instance-type t3.small</code> 실행 시 CLI가 보내는 요청. 색칠된 조각에 마우스를 올리거나 아래 범례를 눌러보세요.</p>
+
+  <div class="panel anatomy" id="anatomy">
+    <div class="panel-title">POST / — Content-Type: application/x-www-form-urlencoded</div>
+    <pre>POST / HTTP/1.1
+Host: localhost:9900
+Content-Type: application/x-www-form-urlencoded; charset=utf-8
+X-Amz-Date: 20260724T093012Z
+Authorization: AWS4-HMAC-SHA256 Credential=AKIA.../20260724/ap-northeast-2/ec2/aws4_request, ...
+
+<mark class="key">Action=RunInstances</mark>&amp;<mark class="scope">Version=2016-11-15</mark>&amp;<mark class="hdrs">ImageId=ami-12345678</mark>&amp;<mark class="hdrs">InstanceType=t3.small</mark>&amp;<mark class="sig">MinCount=1</mark>&amp;<mark class="sig">MaxCount=1</mark></pre>
+  </div>
+
+  <div class="legend" role="group" aria-label="본문 조각 범례">
+    <button type="button" data-part="key"><span class="dot"></span>Action</button>
+    <button type="button" data-part="scope"><span class="dot"></span>Version</button>
+    <button type="button" data-part="hdrs"><span class="dot"></span>파라미터</button>
+    <button type="button" data-part="sig"><span class="dot"></span>수량 파라미터</button>
+  </div>
+
+  <div class="legend-desc">
+    <div><span class="name key">Action</span><span><b>어떤 API를 부르는가</b> — REST의 메서드+경로에 해당. 서버 switch문의 분기 키</span></div>
+    <div><span class="name scope">Version</span><span>API 모델의 <b>버전 날짜</b> — 응답 XML 네임스페이스와 짝을 이룬다 (아래 3절)</span></div>
+    <div><span class="name hdrs">파라미터</span><span>전부 <b>평탄한 key=value</b> — JSON처럼 중첩 구조가 없다. 중첩·리스트는 이름 규칙으로 흉내낸다</span></div>
+    <div><span class="name sig">수량 파라미터</span><span>mincloud는 <code>MinCount</code>만큼 가짜 인스턴스를 만들고, <code>InstanceType</code> 생략 시 t3.micro로 채운다</span></div>
+  </div>
+
+  <p class="sub" style="margin-top:22px">리스트는 어떻게 보낼까? 배열 문법이 없으므로 <b>번호 접미사</b>로 평탄화한다. 이 직렬화 규칙까지가 프로토콜의 일부다.</p>
+
+  <div class="panel">
+    <div class="panel-title">리스트 직렬화 — 번호 붙은 접미사</div>
+    <pre>SecurityGroupId.1=sg-aaa&amp;SecurityGroupId.2=sg-bbb        <span class="c">← EC2 스타일</span>
+Filter.1.Name=instance-type&amp;Filter.1.Value.1=t3.small    <span class="c">← 중첩도 점(.)으로 평탄화</span></pre>
+  </div>
+
+  <p class="sub" style="margin-top:18px">한 가지 더 — <b>이 본문 전체가 SigV4 서명 대상</b>이다. canonical request의 마지막 줄이 SHA-256(본문)이므로, <code>Action</code>이나 파라미터를 한 글자만 바꿔도 서명이 깨진다. Query 프로토콜과 SigV4는 이렇게 맞물려 있다.</p>
+
+  <h2>3. 응답은 XML — 서비스마다 사투리가 다르다</h2>
+  <p class="sub">요청 형식은 세 서비스가 똑같지만, 응답 XML로 오면 갈라진다. 먼저 <b>네임스페이스</b>: 서비스마다 다르고, 자세히 보면 <b>버전이 곧 API 모델의 날짜</b>다. 요청의 <code>Version=</code>과 응답 xmlns의 날짜가 짝을 이룬다.</p>
+
+  <table class="nstable">
+    <tr><th>서비스</th><th>xmlns</th><th>비고</th></tr>
+    <tr><td>IAM</td><td><code>https://iam.amazonaws.com/doc/2010-05-08/</code></td><td class="note">2010년 모델을 아직 쓴다</td></tr>
+    <tr><td>STS</td><td><code>https://sts.amazonaws.com/doc/2011-06-15/</code></td><td class="note">https</td></tr>
+    <tr><td>EC2</td><td><code>http://ec2.amazonaws.com/doc/2016-11-15/</code></td><td class="note">여기만 <b>http</b> — 이것도 바이트 단위로 맞춰야 한다</td></tr>
+  </table>
+
+  <p class="sub" style="margin-top:22px">원소 <b>명명 규칙</b>도 갈라진다. IAM·STS는 UpperCamel, EC2는 lowerCamel에 리스트를 <code>item</code>으로 감싼다.</p>
+
+  <div class="duo">
+    <div class="panel">
+      <div class="panel-title">IAM CreateAccessKey — UpperCamel</div>
+      <pre>&lt;<mark class="key">CreateAccessKeyResponse</mark> xmlns="...2010-05-08/"&gt;
+  &lt;<mark class="key">CreateAccessKeyResult</mark>&gt;
+    &lt;<mark class="key">AccessKey</mark>&gt;
+      &lt;UserName&gt;jeff&lt;/UserName&gt;
+      &lt;AccessKeyId&gt;AKIA...&lt;/AccessKeyId&gt;
+      &lt;Status&gt;Active&lt;/Status&gt;
+      &lt;SecretAccessKey&gt;...&lt;/SecretAccessKey&gt;
+    &lt;/AccessKey&gt;
+  &lt;/CreateAccessKeyResult&gt;
+  &lt;ResponseMetadata&gt;
+    &lt;RequestId&gt;...&lt;/RequestId&gt;
+  &lt;/ResponseMetadata&gt;
+&lt;/CreateAccessKeyResponse&gt;</pre>
+    </div>
+    <div class="panel">
+      <div class="panel-title">EC2 DescribeInstances — lowerCamel + item</div>
+      <pre>&lt;DescribeInstancesResponse xmlns="...2016-11-15/"&gt;
+  &lt;<mark class="sig">requestId</mark>&gt;...&lt;/requestId&gt;
+  &lt;<mark class="sig">reservationSet</mark>&gt;
+    &lt;<mark class="sig">item</mark>&gt;
+      &lt;reservationId&gt;r-...&lt;/reservationId&gt;
+      &lt;ownerId&gt;123456789012&lt;/ownerId&gt;
+      &lt;<mark class="sig">instancesSet</mark>&gt;
+        &lt;<mark class="sig">item</mark>&gt;
+          &lt;instanceId&gt;i-...&lt;/instanceId&gt;
+          &lt;instanceState&gt;
+            &lt;code&gt;16&lt;/code&gt;&lt;name&gt;running&lt;/name&gt;
+          &lt;/instanceState&gt;
+        &lt;/item&gt;
+      &lt;/instancesSet&gt;
+    &lt;/item&gt;
+  &lt;/reservationSet&gt;
+&lt;/DescribeInstancesResponse&gt;</pre>
+    </div>
+  </div>
+
+  <p class="sub" style="margin-top:18px">같은 프로토콜 가족인데 왜 이럴까? EC2가 가장 오래된 AWS API라 자기만의 관례가 굳어졌고, 이후 서비스들(IAM, STS)이 다른 관례로 표준화됐기 때문이다. 호환 구현 입장에서는 "Query 프로토콜 하나"가 아니라 <b>사투리 두 개</b>를 구현하는 셈이다. mincloud에서는 Go 구조체의 xml 태그가 이 사투리를 그대로 새긴다: iam.go는 <code>xml:"CreateAccessKeyResult"</code>, ec2.go는 <code>xml:"instancesSet&gt;item"</code>.</p>
+
+  <h2>4. 하이라이트: 에러 형식마저 두 갈래다</h2>
+  <p class="sub">직접 구현하다 발견한 가장 큰 함정. 성공 응답만 다른 게 아니라 <b>에러 봉투 자체가 다르다.</b> IAM/STS는 <code>ErrorResponse</code>, EC2는 <code>Response &gt; Errors</code>다 — 네임스페이스도 없고, RequestID의 <b>대소문자까지 다르다</b> (<code>RequestId</code> vs <code>RequestID</code>).</p>
+
+  <div class="duo">
+    <div class="panel">
+      <div class="panel-title">IAM · STS — 잘못된 Action을 보내면</div>
+      <pre>&lt;<mark class="key">ErrorResponse</mark> xmlns="...2010-05-08/"&gt;
+  &lt;Error&gt;
+    &lt;<mark class="key">Type</mark>&gt;Sender&lt;/Type&gt;
+    &lt;Code&gt;InvalidAction&lt;/Code&gt;
+    &lt;Message&gt;Could not find operation ...&lt;/Message&gt;
+  &lt;/Error&gt;
+  &lt;<mark class="key">RequestId</mark>&gt;...&lt;/RequestId&gt;
+&lt;/ErrorResponse&gt;</pre>
+    </div>
+    <div class="panel">
+      <div class="panel-title">EC2 — ImageId 없이 RunInstances 하면</div>
+      <pre>&lt;<mark class="sig">Response</mark>&gt;                <span class="c">← 네임스페이스 없음</span>
+  &lt;<mark class="sig">Errors</mark>&gt;
+    &lt;Error&gt;               <span class="c">← Type 없음</span>
+      &lt;Code&gt;MissingParameter&lt;/Code&gt;
+      &lt;Message&gt;The request must contain
+        the parameter ImageId&lt;/Message&gt;
+    &lt;/Error&gt;
+  &lt;/Errors&gt;
+  &lt;<mark class="sig">RequestID</mark>&gt;...&lt;/RequestID&gt;  <span class="c">← ID가 대문자</span>
+&lt;/Response&gt;</pre>
+    </div>
+  </div>
+
+  <p class="sub" style="margin-top:18px">이걸 대충 한 형식으로 통일하면 어떻게 될까? CLI는 에러 코드와 메시지를 찾지 못해 <b>정체불명의 에러</b>를 뱉는다. "친절한 에러 메시지"조차 wire format을 정확히 맞춰야 전달된다. 그래서 mincloud는 <code>errorResponse</code> 구조체를 서비스 패키지마다 따로 둔다 — 공유하면 안 되는 것을 공유하지 않는 것도 설계다.</p>
+
+  <h2>5. CLI가 속는 원리: botocore는 모델대로만 읽는다</h2>
+  <p class="sub">aws CLI의 내부(botocore)는 XML을 "그냥" 파싱하지 않는다. 서비스마다 <b>JSON으로 된 서비스 모델</b>(어떤 Action이 있고, 응답의 어떤 원소가 어떤 필드인지)을 갖고 있고, <b>그 스키마에 적힌 이름의 원소만</b> 골라 읽는다.</p>
+
+  <div class="why">
+    <div class="card">
+      <h3>이름이 맞으면</h3>
+      <p>모델의 필드로 채워져 <code style="font-family:var(--mono);font-size:12.5px">"InstanceId": "i-..."</code> 같은 JSON 출력으로 나온다. CLI는 상대가 진짜 AWS인지 알 방법도, 관심도 없다.</p>
+    </div>
+    <div class="card">
+      <h3>이름이 틀리면</h3>
+      <p>에러가 아니라 <b>침묵</b>이다. 모델에 없는 원소는 그냥 무시되어 필드가 조용히 사라진다. <code style="font-family:var(--mono);font-size:12.5px">instancesSet</code>을 <code style="font-family:var(--mono);font-size:12.5px">Instances</code>로 쓰면 인스턴스 목록이 빈 채로 출력된다.</p>
+    </div>
+    <div class="card">
+      <h3>형식이 크게 틀리면</h3>
+      <p>봉투(루트 원소, 에러 형식)가 어긋나면 그제서야 CLI가 파싱 에러를 낸다. 디버깅 난이도: 침묵 &gt; 에러.</p>
+    </div>
+  </div>
+
+  <p class="sub" style="margin-top:22px">그래서 "aws CLI를 속인다"는 말의 실체는 마술이 아니다. <b>모델이 기대하는 wire format을 바이트 수준으로 재현하는 것</b>, 그게 전부다. 거꾸로 말하면 botocore의 서비스 모델은 이 프로토콜의 가장 정확한 공개 명세서이고, mincloud의 진짜 테스트는 유닛 테스트가 아니라 <b>실제 aws CLI가 정상 출력을 내는가</b>이다.</p>
+
+  <div class="panel">
+    <div class="panel-title">검증: 진짜 CLI, 가짜 클라우드</div>
+    <pre>$ aws ec2 run-instances --endpoint-url http://localhost:9900 \
+    --image-id ami-12345678 --instance-type t3.small
+{
+    "ReservationId": "r-06d1c...",
+    "Instances": [ { "InstanceId": "i-0f3ab...", "State": { "Code": 0, "Name": "pending" } } ]
+}
+<span class="c"># 응답은 pending으로 — 그리고 다음 describe-instances부터는 running.
+# 실제 EC2의 상태 전이를 한 박자 흉내낸다.</span></pre>
+  </div>
+
+  <p class="footnote">
+    구현 위치: 서비스별 핸들러는 <code>internal/service/</code> 아래 패키지로 나뉜다 — <code>iam/iam.go</code>, <code>sts/sts.go</code>, <code>ec2/ec2.go</code>.
+    공통 동작(SigV4 인증 + 스코프 검사, XML 응답 프레이밍 <code>service.WriteXML</code>, AWS풍 UUID를 만드는 <code>service.RequestID</code>)은 <code>internal/service/service.go</code>에 있다.
+    응답 구조체는 <code>encoding/xml</code> 태그로 wire format을 선언하므로, 이 글의 XML 예시는 곧 코드의 구조체 정의와 1:1로 대응한다.
+    본문의 ID·키 값은 모두 예시용 가짜 값이다.
+  </p>
+</main>
+
+<script>
+  const anatomy = document.getElementById('anatomy');
+  const parts = ['key', 'scope', 'hdrs', 'sig'];
+  document.querySelectorAll('.legend button').forEach(btn => {
+    const part = btn.dataset.part;
+    const on = () => { parts.forEach(p => anatomy.classList.remove('focus-' + p)); anatomy.classList.add('focus-' + part); };
+    const off = () => anatomy.classList.remove('focus-' + part);
+    btn.addEventListener('mouseenter', on);
+    btn.addEventListener('mouseleave', off);
+    btn.addEventListener('focus', on);
+    btn.addEventListener('blur', off);
+    btn.addEventListener('click', () => {
+      const active = anatomy.classList.contains('focus-' + part);
+      parts.forEach(p => anatomy.classList.remove('focus-' + p));
+      if (!active) anatomy.classList.add('focus-' + part);
+    });
+  });
+</script>
+
+</html>
